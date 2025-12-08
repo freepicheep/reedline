@@ -170,6 +170,9 @@ pub struct Reedline {
 
     #[cfg(feature = "external_printer")]
     external_printer: Option<ExternalPrinter<String>>,
+
+    // Automaticaly open the menu with the following name
+    autocompletion_action: Option<String>,
 }
 
 struct BufferEditor {
@@ -243,7 +246,9 @@ impl Reedline {
             kitty_protocol: KittyProtocolGuard::new(),
             immediately_accept: false,
             #[cfg(feature = "external_printer")]
+            #[cfg(feature = "external_printer")]
             external_printer: None,
+            autocompletion_action: None,
         }
     }
 
@@ -524,6 +529,17 @@ impl Reedline {
     #[must_use]
     pub fn with_menu(mut self, menu: ReedlineMenu) -> Self {
         self.menus.push(menu);
+        self
+    }
+
+    /// A builder that enables autocompletion with the specified menu action
+    #[must_use]
+    pub fn with_autocompletion(mut self, action: bool, menu_name: String) -> Self {
+        if action {
+            self.autocompletion_action = Some(menu_name);
+        } else {
+            self.autocompletion_action = None;
+        }
         self
     }
 
@@ -1213,6 +1229,12 @@ impl Reedline {
                         menu.menu_event(MenuEvent::Deactivate);
                     } else {
                         menu.menu_event(MenuEvent::Edit(self.quick_completions));
+                    }
+                }
+
+                if let Some(menu_name) = self.autocompletion_action.clone() {
+                    if self.active_menu().is_none() && !self.editor.is_empty() {
+                        return self.handle_editor_event(prompt, ReedlineEvent::Menu(menu_name));
                     }
                 }
                 Ok(EventStatus::Handled)
