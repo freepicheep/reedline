@@ -1234,7 +1234,9 @@ impl Reedline {
 
                 if let Some(menu_name) = self.autocompletion_action.clone() {
                     if self.active_menu().is_none() && !self.editor.is_empty() {
-                        return self.handle_editor_event(prompt, ReedlineEvent::Menu(menu_name));
+                        if let Some(menu) = self.menus.iter_mut().find(|menu| menu.name() == &menu_name) {
+                            menu.menu_event(MenuEvent::Activate(false));
+                        }
                     }
                 }
                 Ok(EventStatus::Handled)
