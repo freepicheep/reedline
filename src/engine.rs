@@ -1135,14 +1135,28 @@ impl Reedline {
             {
                 for menu in self.menus.iter_mut() {
                     if menu.is_active() {
+                        // Check if the buffer would change after accepting the completion
+                        let buffer_before = self.editor.get_buffer().to_string();
                         menu.replace_in_buffer(&mut self.editor);
+                        let buffer_after = self.editor.get_buffer();
+
                         menu.menu_event(MenuEvent::Deactivate);
+
+                        // If buffer is unchanged and autocompletion is enabled,
+                        // fall through to execute the command instead of just accepting the completion
+                        if self.autocompletion_action.is_some()
+                            && buffer_before.trim() == buffer_after.trim()
+                        {
+                            break;
+                        }
 
                         return Ok(EventStatus::Handled);
                     }
                 }
-                unreachable!()
+                // Fall through to normal Enter/Submit handling below
+                self.handle_editor_event(prompt, event)
             }
+
             ReedlineEvent::Enter => {
                 #[cfg(feature = "bashisms")]
                 if let Some(event) = self.parse_bang_command() {
@@ -1234,7 +1248,9 @@ impl Reedline {
 
                 if let Some(menu_name) = self.autocompletion_action.clone() {
                     if self.active_menu().is_none() && !self.editor.is_empty() {
-                        if let Some(menu) = self.menus.iter_mut().find(|menu| menu.name() == &menu_name) {
+                        if let Some(menu) =
+                            self.menus.iter_mut().find(|menu| menu.name() == &menu_name)
+                        {
                             menu.menu_event(MenuEvent::Activate(false));
                         }
                     }
