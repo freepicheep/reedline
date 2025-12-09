@@ -387,6 +387,7 @@ impl Painter {
             .queue(Print(&lines.after_cursor))?;
 
         if let Some(menu) = menu {
+            self.stdout.queue(Print(&lines.hint))?;
             self.print_menu(menu, lines, use_ansi_coloring)?;
         } else {
             self.stdout.queue(Print(&lines.hint))?;
@@ -484,6 +485,7 @@ impl Painter {
             } else {
                 self.stdout.queue(Print(&lines.after_cursor))?;
             }
+            self.stdout.queue(Print(&lines.hint))?;
             self.print_menu(menu, lines, use_ansi_coloring)?;
         } else {
             // Selecting lines for the hint

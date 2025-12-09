@@ -1078,9 +1078,9 @@ impl Reedline {
                     if self.hints_active()
                         && self.editor.is_cursor_at_buffer_end()
                         && !current_hint.is_empty()
-                        && self.active_menu().is_none()
                     {
                         self.run_edit_commands(&[EditCommand::InsertString(current_hint)]);
+                        self.deactivate_menus();
                         return Ok(EventStatus::Handled);
                     }
                 }
@@ -1092,9 +1092,9 @@ impl Reedline {
                     if self.hints_active()
                         && self.editor.is_cursor_at_buffer_end()
                         && !current_hint_part.is_empty()
-                        && self.active_menu().is_none()
                     {
                         self.run_edit_commands(&[EditCommand::InsertString(current_hint_part)]);
+                        self.deactivate_menus();
                         return Ok(EventStatus::Handled);
                     }
                 }
