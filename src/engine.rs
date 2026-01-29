@@ -799,6 +799,15 @@ impl Reedline {
                     match self.edit_mode.parse_event(event) {
                         ReedlineEvent::Edit(edit) => edits.extend(edit),
                         ReedlineEvent::Resize(x, y) => resize = Some((x, y)),
+                        ReedlineEvent::Paste(paste_commands) => {
+                            // Flush any pending edits first
+                            if !edits.is_empty() {
+                                reedline_events
+                                    .push(ReedlineEvent::Edit(std::mem::take(&mut edits)));
+                            }
+                            // Push paste event as-is (will be handled without triggering autocompletion)
+                            reedline_events.push(ReedlineEvent::Paste(paste_commands));
+                        }
                         event => {
                             if !edits.is_empty() {
                                 reedline_events
@@ -960,7 +969,8 @@ impl Reedline {
             | ReedlineEvent::MenuRight
             | ReedlineEvent::MenuPageNext
             | ReedlineEvent::MenuPagePrevious
-            | ReedlineEvent::ViChangeMode(_) => Ok(EventStatus::Inapplicable),
+            | ReedlineEvent::ViChangeMode(_)
+            | ReedlineEvent::Paste(_) => Ok(EventStatus::Inapplicable),
         }
     }
 
@@ -1255,6 +1265,20 @@ impl Reedline {
                         }
                     }
                 }
+                Ok(EventStatus::Handled)
+            }
+            ReedlineEvent::Paste(commands) => {
+                // Run the paste commands like Edit, but do NOT trigger autocompletion
+                self.run_edit_commands(&commands);
+                if let Some(menu) = self.menus.iter_mut().find(|men| men.is_active()) {
+                    if self.editor.line_buffer().get_buffer().is_empty() {
+                        menu.menu_event(MenuEvent::Deactivate);
+                    } else {
+                        menu.menu_event(MenuEvent::Edit(self.quick_completions));
+                    }
+                }
+                // NOTE: Unlike Edit, we deliberately skip the autocompletion_action trigger
+                // so that paste operations don't show the completion menu
                 Ok(EventStatus::Handled)
             }
             ReedlineEvent::OpenEditor => self.open_editor().map(|_| EventStatus::Handled),

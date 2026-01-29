@@ -188,7 +188,7 @@ impl EditMode for Vi {
             Event::Resize(width, height) => ReedlineEvent::Resize(width, height),
             Event::FocusGained => ReedlineEvent::None,
             Event::FocusLost => ReedlineEvent::None,
-            Event::Paste(body) => ReedlineEvent::Edit(vec![EditCommand::InsertString(
+            Event::Paste(body) => ReedlineEvent::Paste(vec![EditCommand::InsertString(
                 body.replace("\r\n", "\n").replace('\r', "\n"),
             )]),
         }

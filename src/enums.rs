@@ -767,6 +767,9 @@ pub enum ReedlineEvent {
     /// Run these commands in the editor
     Edit(Vec<EditCommand>),
 
+    /// Paste text (runs edit commands but does not trigger autocompletion)
+    Paste(Vec<EditCommand>),
+
     /// Trigger full repaint
     Repaint,
 
@@ -855,6 +858,7 @@ impl Display for ReedlineEvent {
                 f,
                 "Edit: <EditCommand> or Edit: <EditCommand> value: <string>"
             ),
+            ReedlineEvent::Paste(_) => write!(f, "Paste: <EditCommand>"),
             ReedlineEvent::Repaint => write!(f, "Repaint"),
             ReedlineEvent::PreviousHistory => write!(f, "PreviousHistory"),
             ReedlineEvent::Up => write!(f, "Up"),
