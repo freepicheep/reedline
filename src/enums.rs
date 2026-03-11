@@ -1,7 +1,29 @@
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use strum_macros::EnumIter;
+use strum::{EnumDiscriminants, EnumIter, EnumString, VariantArray};
+
+/// Which mouse button was pressed.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MouseButton {
+    /// Left mouse button
+    #[default]
+    Left,
+    /// Right mouse button
+    Right,
+    /// Middle mouse button
+    Middle,
+}
+
+impl From<crossterm::event::MouseButton> for MouseButton {
+    fn from(button: crossterm::event::MouseButton) -> Self {
+        match button {
+            crossterm::event::MouseButton::Left => Self::Left,
+            crossterm::event::MouseButton::Right => Self::Right,
+            crossterm::event::MouseButton::Middle => Self::Middle,
+        }
+    }
+}
 
 /// Valid ways how `Reedline::read_line()` can return
 #[derive(Debug)]
@@ -58,7 +80,10 @@ impl Default for TextObject {
 ///
 /// Executed by `Reedline::run_edit_commands()`
 #[non_exhaustive]
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, EnumIter)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, EnumDiscriminants, EnumIter)]
+#[strum_discriminants(doc = "This is the auto generated discriminant type for [`EditCommand`]")]
+#[strum_discriminants(derive(EnumString, VariantArray))]
+#[strum_discriminants(strum(ascii_case_insensitive))]
 pub enum EditCommand {
     /// Move to the start of the buffer
     MoveToStart {
@@ -68,6 +93,12 @@ pub enum EditCommand {
 
     /// Move to the start of the current line
     MoveToLineStart {
+        /// Select the text between the current cursor position and destination
+        select: bool,
+    },
+
+    /// Move to the start of the current line skipping any whitespace
+    MoveToLineNonBlankStart {
         /// Select the text between the current cursor position and destination
         select: bool,
     },
@@ -194,11 +225,26 @@ pub enum EditCommand {
     /// Cut from the start of the buffer to the insertion point
     CutFromStart,
 
+    /// Cut from the start of the buffer to the line of insertion point
+    CutFromStartLinewise {
+        /// When true, an empty line will remain after the operation
+        leave_blank_line: bool,
+    },
+
     /// Cut from the start of the current line to the insertion point
     CutFromLineStart,
 
+    /// Cut from the first non whitespace character of the current line to the insertion point
+    CutFromLineNonBlankStart,
+
     /// Cut from the insertion point to the end of the buffer
     CutToEnd,
+
+    /// Cut from the line of insertion point to the end of the buffer
+    CutToEndLinewise {
+        /// When true, an empty line will remain after the operation
+        leave_blank_line: bool,
+    },
 
     /// Cut from the insertion point to the end of the current line
     CutToLineEnd,
@@ -314,11 +360,20 @@ pub enum EditCommand {
     /// Copy from the start of the buffer to the insertion point
     CopyFromStart,
 
+    /// Copy from the start of the buffer to the line of insertion point
+    CopyFromStartLinewise,
+
     /// Copy from the start of the current line to the insertion point
     CopyFromLineStart,
 
+    /// Copy from the first non whitespace character of the current line to the insertion point
+    CopyFromLineNonBlankStart,
+
     /// Copy from the insertion point to the end of the buffer
     CopyToEnd,
+
+    /// Copy from the line of insertion point to the end of the buffer
+    CopyToEndLinewise,
 
     /// Copy from the insertion point to the end of the current line
     CopyToLineEnd,
@@ -423,6 +478,9 @@ impl Display for EditCommand {
             EditCommand::MoveToLineStart { .. } => {
                 write!(f, "MoveToLineStart Optional[select: <bool>]")
             }
+            EditCommand::MoveToLineNonBlankStart { .. } => {
+                write!(f, "MoveToLineNonBlankStart Optional[select: <bool>]")
+            }
             EditCommand::MoveToEnd { .. } => write!(f, "MoveToEnd Optional[select: <bool>]"),
             EditCommand::MoveToLineEnd { .. } => {
                 write!(f, "MoveToLineEnd Optional[select: <bool>]")
@@ -472,8 +530,15 @@ impl Display for EditCommand {
             EditCommand::Complete => write!(f, "Complete"),
             EditCommand::CutCurrentLine => write!(f, "CutCurrentLine"),
             EditCommand::CutFromStart => write!(f, "CutFromStart"),
+            EditCommand::CutFromStartLinewise { .. } => {
+                write!(f, "CutFromStartLinewise Value: <bool>")
+            }
             EditCommand::CutFromLineStart => write!(f, "CutFromLineStart"),
+            EditCommand::CutFromLineNonBlankStart => write!(f, "CutFromLineNonBlankStart"),
             EditCommand::CutToEnd => write!(f, "CutToEnd"),
+            EditCommand::CutToEndLinewise { .. } => {
+                write!(f, "CutToEndLinewise Value: <bool>")
+            }
             EditCommand::CutToLineEnd => write!(f, "CutToLineEnd"),
             EditCommand::KillLine => write!(f, "KillLine"),
             EditCommand::CutWordLeft => write!(f, "CutWordLeft"),
@@ -503,8 +568,11 @@ impl Display for EditCommand {
             EditCommand::CopySelection => write!(f, "CopySelection"),
             EditCommand::Paste => write!(f, "Paste"),
             EditCommand::CopyFromStart => write!(f, "CopyFromStart"),
+            EditCommand::CopyFromStartLinewise => write!(f, "CopyFromStartLinewise"),
             EditCommand::CopyFromLineStart => write!(f, "CopyFromLineStart"),
+            EditCommand::CopyFromLineNonBlankStart => write!(f, "CopyFromLineNonBlankStart"),
             EditCommand::CopyToEnd => write!(f, "CopyToEnd"),
+            EditCommand::CopyToEndLinewise => write!(f, "CopyToEndLinewise"),
             EditCommand::CopyToLineEnd => write!(f, "CopyToLineEnd"),
             EditCommand::CopyCurrentLine => write!(f, "CopyCurrentLine"),
             EditCommand::CopyWordLeft => write!(f, "CopyWordLeft"),
@@ -546,6 +614,7 @@ impl EditCommand {
             | EditCommand::MoveToEnd { select, .. }
             | EditCommand::MoveToLineStart { select, .. }
             | EditCommand::MoveToLineEnd { select, .. }
+            | EditCommand::MoveToLineNonBlankStart { select, .. }
             | EditCommand::MoveToPosition { select, .. }
             | EditCommand::MoveLeft { select, .. }
             | EditCommand::MoveRight { select, .. }
@@ -581,10 +650,13 @@ impl EditCommand {
             | EditCommand::Complete
             | EditCommand::CutCurrentLine
             | EditCommand::CutFromStart
+            | EditCommand::CutFromStartLinewise { .. }
             | EditCommand::CutFromLineStart
+            | EditCommand::CutFromLineNonBlankStart
             | EditCommand::CutToLineEnd
             | EditCommand::KillLine
             | EditCommand::CutToEnd
+            | EditCommand::CutToEndLinewise { .. }
             | EditCommand::CutWordLeft
             | EditCommand::CutBigWordLeft
             | EditCommand::CutWordRight
@@ -618,8 +690,11 @@ impl EditCommand {
             #[cfg(feature = "system_clipboard")]
             EditCommand::CopySelectionSystem => EditType::NoOp,
             EditCommand::CopyFromStart
+            | EditCommand::CopyFromStartLinewise
             | EditCommand::CopyFromLineStart
+            | EditCommand::CopyFromLineNonBlankStart
             | EditCommand::CopyToEnd
+            | EditCommand::CopyToEndLinewise
             | EditCommand::CopyToLineEnd
             | EditCommand::CopyCurrentLine
             | EditCommand::CopyWordLeft
@@ -709,7 +784,10 @@ impl UndoBehavior {
 }
 
 /// Reedline supported actions.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, EnumIter)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, EnumDiscriminants, EnumIter)]
+#[strum_discriminants(doc = "This is the auto generated discriminant type for [`ReedlineEvent`]")]
+#[strum_discriminants(derive(EnumString, VariantArray))]
+#[strum_discriminants(strum(ascii_case_insensitive))]
 pub enum ReedlineEvent {
     /// No op event
     None,
@@ -756,10 +834,18 @@ pub enum ReedlineEvent {
     SubmitOrNewline,
 
     /// Esc event
+    #[strum_discriminants(strum(serialize = "Esc", serialize = "Escape"))]
     Esc,
 
-    /// Mouse
-    Mouse, // Fill in details later
+    /// Mouse click event with screen coordinates
+    Mouse {
+        /// Column (x) position, 0-indexed from left
+        column: u16,
+        /// Row (y) position, 0-indexed from top
+        row: u16,
+        /// Which mouse button was clicked
+        button: MouseButton,
+    },
 
     /// trigger terminal resize
     Resize(u16, u16),
@@ -787,6 +873,12 @@ pub enum ReedlineEvent {
 
     /// Move left to the next column, or completion entry
     Left,
+
+    /// Move to the start of the buffer
+    ToStart,
+
+    /// Move to the end of the buffer
+    ToEnd,
 
     /// Navigate to the next historic buffer
     NextHistory,
@@ -852,7 +944,11 @@ impl Display for ReedlineEvent {
             ReedlineEvent::Submit => write!(f, "Submit"),
             ReedlineEvent::SubmitOrNewline => write!(f, "SubmitOrNewline"),
             ReedlineEvent::Esc => write!(f, "Esc"),
-            ReedlineEvent::Mouse => write!(f, "Mouse"),
+            ReedlineEvent::Mouse {
+                column,
+                row,
+                button,
+            } => write!(f, "Mouse({}, {}, {:?})", column, row, button),
             ReedlineEvent::Resize(_, _) => write!(f, "Resize <int> <int>"),
             ReedlineEvent::Edit(_) => write!(
                 f,
@@ -863,6 +959,8 @@ impl Display for ReedlineEvent {
             ReedlineEvent::PreviousHistory => write!(f, "PreviousHistory"),
             ReedlineEvent::Up => write!(f, "Up"),
             ReedlineEvent::Down => write!(f, "Down"),
+            ReedlineEvent::ToStart => write!(f, "ToStart"),
+            ReedlineEvent::ToEnd => write!(f, "ToEnd"),
             ReedlineEvent::Right => write!(f, "Right"),
             ReedlineEvent::Left => write!(f, "Left"),
             ReedlineEvent::NextHistory => write!(f, "NextHistory"),
