@@ -64,6 +64,8 @@ impl Editor {
             EditCommand::MoveToPosition { position, select } => {
                 self.move_to_position(*position, *select)
             }
+            EditCommand::MoveLineUp { select } => self.move_line_up(*select),
+            EditCommand::MoveLineDown { select } => self.move_line_down(*select),
             EditCommand::MoveLeft { select } => self.move_left(*select),
             EditCommand::MoveRight { select } => self.move_right(*select),
             EditCommand::MoveWordLeft { select } => self.move_word_left(*select),
@@ -79,6 +81,8 @@ impl Editor {
             EditCommand::Complete => {}
             EditCommand::InsertString(str) => self.insert_str(str),
             EditCommand::InsertNewline => self.insert_newline(),
+            EditCommand::InsertNewlineAbove => self.insert_newline_above(),
+            EditCommand::InsertNewlineBelow => self.insert_newline_below(),
             EditCommand::ReplaceChar(chr) => self.replace_char(*chr),
             EditCommand::ReplaceChars(n_chars, str) => self.replace_chars(*n_chars, str),
             EditCommand::Backspace => self.backspace(),
@@ -213,7 +217,7 @@ impl Editor {
                 let deleted_char = self.edit_stack.current().grapheme_left().chars().next();
                 UndoBehavior::Backspace(deleted_char)
             }
-            (_, EditType::UndoRedo) => UndoBehavior::UndoRedo,
+            (_, EditType::UndoRedo | EditType::NoOp) => UndoBehavior::NoOp,
             (_, _) => UndoBehavior::CreateUndoPoint,
         };
 
@@ -252,12 +256,14 @@ impl Editor {
         self.line_buffer.set_insertion_point(position)
     }
 
-    pub(crate) fn move_line_up(&mut self) {
+    pub(crate) fn move_line_up(&mut self, select: bool) {
+        self.update_selection_anchor(select);
         self.line_buffer.move_line_up();
         self.update_undo_state(UndoBehavior::MoveCursor);
     }
 
-    pub(crate) fn move_line_down(&mut self) {
+    pub(crate) fn move_line_down(&mut self, select: bool) {
+        self.update_selection_anchor(select);
         self.line_buffer.move_line_down();
         self.update_undo_state(UndoBehavior::MoveCursor);
     }
@@ -343,8 +349,8 @@ impl Editor {
     }
 
     pub(crate) fn update_undo_state(&mut self, undo_behavior: UndoBehavior) {
-        if matches!(undo_behavior, UndoBehavior::UndoRedo) {
-            self.last_undo_behavior = UndoBehavior::UndoRedo;
+        if matches!(undo_behavior, UndoBehavior::NoOp) {
+            self.last_undo_behavior = UndoBehavior::NoOp;
             return;
         }
         if !undo_behavior.create_undo_point_after(&self.last_undo_behavior) {
@@ -606,9 +612,11 @@ impl Editor {
     }
 
     fn replace_char(&mut self, character: char) {
+        let insertion_point = self.line_buffer.insertion_point();
         self.line_buffer.delete_right_grapheme();
 
         self.line_buffer.insert_char(character);
+        self.line_buffer.set_insertion_point(insertion_point);
     }
 
     fn replace_chars(&mut self, n_chars: usize, string: &str) {
@@ -767,6 +775,21 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.delete_selection();
+        self.line_buffer.insert_newline();
+    }
+
+    fn insert_newline_above(&mut self) {
+        let index = self.line_buffer.find_char_left('\n', false).unwrap_or(0);
+        self.line_buffer.set_insertion_point(index);
+        self.line_buffer.insert_newline();
+    }
+
+    fn insert_newline_below(&mut self) {
+        let index = self
+            .line_buffer
+            .find_char_right('\n', false)
+            .unwrap_or(self.line_buffer.len());
+        self.line_buffer.set_insertion_point(index);
         self.line_buffer.insert_newline();
     }
 
