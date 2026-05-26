@@ -980,10 +980,8 @@ impl Reedline {
                         self.pending_auto_menu_at = None;
                         if let Some(menu_name) = self.auto_menu_action.clone() {
                             if self.active_menu().is_none() && !self.editor.is_empty() {
-                                if let Some(menu) = self
-                                    .menus
-                                    .iter_mut()
-                                    .find(|menu| menu.name() == &menu_name)
+                                if let Some(menu) =
+                                    self.menus.iter_mut().find(|menu| menu.name() == &menu_name)
                                 {
                                     menu.menu_event(MenuEvent::Activate(false));
                                     fired_pending_auto_menu = true;
@@ -1367,14 +1365,20 @@ impl Reedline {
                         // Check if the buffer would change after accepting the completion
                         let buffer_before = self.editor.get_buffer().to_string();
                         menu.replace_in_buffer(&mut self.editor);
-                        let buffer_after = self.editor.get_buffer();
+                        let buffer_after = self.editor.get_buffer().to_string();
 
                         menu.menu_event(MenuEvent::Deactivate);
 
-                        // If buffer is unchanged and the auto menu is enabled,
-                        // fall through to execute the command instead of just accepting the completion
+                        // With the auto menu enabled, treat Enter as "execute the
+                        // line" when accepting the suggestion would be a no-op
+                        // for the user's intent: either the buffer didn't change,
+                        // or the only difference is a trailing path separator that
+                        // the menu added to a directory completion. The latter
+                        // covers `cd ..<Enter>` (suggestion `../`) and similar
+                        // cases where the typed line is already a complete,
+                        // executable command.
                         if self.auto_menu_action.is_some()
-                            && buffer_before.trim() == buffer_after.trim()
+                            && accept_is_redundant(&buffer_before, &buffer_after)
                         {
                             break;
                         }
@@ -1497,9 +1501,7 @@ impl Reedline {
                     // Skip auto-opening when the batch is pure cursor movement
                     // (e.g. h/j/k/l in vim normal mode) — moving around should
                     // not pop the menu, only actual text edits should.
-                    let edits_text = commands
-                        .iter()
-                        .any(|c| c.edit_type() == EditType::EditText);
+                    let edits_text = commands.iter().any(|c| c.edit_type() == EditType::EditText);
                     if edits_text && self.active_menu().is_none() && !self.editor.is_empty() {
                         if self.auto_menu_delay.is_zero() {
                             if let Some(menu) =
@@ -1511,8 +1513,7 @@ impl Reedline {
                             // Debounce: schedule activation; each new edit
                             // pushes the deadline back so the menu only opens
                             // once typing pauses for `auto_menu_delay`.
-                            self.pending_auto_menu_at =
-                                Some(Instant::now() + self.auto_menu_delay);
+                            self.pending_auto_menu_at = Some(Instant::now() + self.auto_menu_delay);
                         }
                     } else if self.editor.is_empty() {
                         // Buffer drained — drop any pending activation so the
@@ -2407,12 +2408,47 @@ impl Reedline {
     }
 }
 
+/// Returns true when accepting an auto-menu suggestion would not meaningfully
+/// change the user's input: either the buffer is identical after acceptance,
+/// or the menu only appended a single trailing path separator to a directory
+/// completion (so `cd ..<Enter>` with suggestion `../` executes the command
+/// instead of first replacing the buffer with `cd ../`).
+fn accept_is_redundant(before: &str, after: &str) -> bool {
+    let before = before.trim();
+    let after = after.trim();
+    if before == after {
+        return true;
+    }
+    if let Some(extra) = after.strip_prefix(before) {
+        if extra == "/" || extra == "\\" {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::terminal_extensions::semantic_prompt::PromptKind;
     use crate::DefaultPrompt;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::identical("cd ..", "cd ..", true)]
+    #[case::trailing_unix_slash("cd ..", "cd ../", true)]
+    #[case::trailing_windows_slash("cd ..", "cd ..\\", true)]
+    #[case::full_dir_name("cd Documents", "cd Documents/", true)]
+    #[case::partial_completion("cd Doc", "cd Documents/", false)]
+    #[case::different_suffix("cd ..", "cd ../foo", false)]
+    #[case::trailing_other_char("cd ..", "cd ..x", false)]
+    fn accept_is_redundant_cases(
+        #[case] before: &str,
+        #[case] after: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(accept_is_redundant(before, after), expected);
+    }
 
     #[test]
     fn test_cursor_position_after_multiline_history_navigation() {
