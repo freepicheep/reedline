@@ -904,7 +904,7 @@ pub enum ReedlineEvent {
     /// Run these commands in the editor
     Edit(Vec<EditCommand>),
 
-    /// Paste text (runs edit commands but does not trigger autocompletion)
+    /// Paste text (runs edit commands but does not trigger the auto menu)
     Paste(Vec<EditCommand>),
 
     /// Trigger full repaint

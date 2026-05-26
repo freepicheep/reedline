@@ -218,16 +218,16 @@ pub struct Reedline {
     external_printer: Option<ExternalPrinter<String>>,
 
     // Automaticaly open the menu with the following name
-    autocompletion_action: Option<String>,
+    auto_menu_action: Option<String>,
 
-    // How long to wait after the last edit before opening the autocompletion
-    // menu. Zero means open immediately.
-    autocompletion_delay: Duration,
+    // How long to wait after the last edit before opening the auto menu.
+    // Zero means open immediately.
+    auto_menu_delay: Duration,
 
-    // Set when an edit has scheduled a delayed autocompletion activation.
+    // Set when an edit has scheduled a delayed auto menu activation.
     // The main read loop polls with a timeout derived from this so the menu
-    // opens once the typing pause exceeds `autocompletion_delay`.
-    pending_autocompletion_at: Option<Instant>,
+    // opens once the typing pause exceeds `auto_menu_delay`.
+    pending_auto_menu_at: Option<Instant>,
 
     // Callback function that is called periodically while waiting for input.
     // Useful for processing external events (e.g., GUI updates) during idle time.
@@ -312,9 +312,9 @@ impl Reedline {
             poll_interval: DEFAULT_POLL_INTERVAL,
             #[cfg(feature = "external_printer")]
             external_printer: None,
-            autocompletion_action: None,
-            autocompletion_delay: Duration::ZERO,
-            pending_autocompletion_at: None,
+            auto_menu_action: None,
+            auto_menu_delay: Duration::ZERO,
+            pending_auto_menu_at: None,
             #[cfg(feature = "idle_callback")]
             idle_callback: None,
         }
@@ -631,29 +631,29 @@ impl Reedline {
         self
     }
 
-    /// A builder that enables autocompletion with the specified menu action
+    /// A builder that enables the auto menu with the specified menu action
     #[must_use]
-    pub fn with_autocompletion(mut self, action: bool, menu_name: String) -> Self {
+    pub fn with_auto_menu(mut self, action: bool, menu_name: String) -> Self {
         if action {
-            self.autocompletion_action = Some(menu_name);
+            self.auto_menu_action = Some(menu_name);
         } else {
-            self.autocompletion_action = None;
-            self.pending_autocompletion_at = None;
+            self.auto_menu_action = None;
+            self.pending_auto_menu_at = None;
         }
         self
     }
 
-    /// Sets a delay before the autocompletion menu opens after a text edit.
+    /// Sets a delay before the auto menu opens after a text edit.
     ///
-    /// When set to a non-zero duration, [`with_autocompletion`] becomes a
+    /// When set to a non-zero duration, [`with_auto_menu`] becomes a
     /// debounced trigger: each edit restarts the timer, and the menu only
     /// opens once typing pauses for at least `delay`. A zero duration (the
     /// default) opens the menu on every edit.
     #[must_use]
-    pub fn with_autocompletion_delay(mut self, delay: Duration) -> Self {
-        self.autocompletion_delay = delay;
+    pub fn with_auto_menu_delay(mut self, delay: Duration) -> Self {
+        self.auto_menu_delay = delay;
         if delay.is_zero() {
-            self.pending_autocompletion_at = None;
+            self.pending_auto_menu_at = None;
         }
         self
     }
@@ -859,7 +859,7 @@ impl Reedline {
             self.suspended_state = None;
         }
         self.hide_hints = false;
-        self.pending_autocompletion_at = None;
+        self.pending_auto_menu_at = None;
 
         self.repaint(prompt)?;
 
@@ -934,7 +934,7 @@ impl Reedline {
                 };
 
                 let pending_timeout = self
-                    .pending_autocompletion_at
+                    .pending_auto_menu_at
                     .map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
                 if needs_polling || pending_timeout.is_some() {
@@ -969,16 +969,16 @@ impl Reedline {
                 }
             }
 
-            // If a debounced autocompletion is due and no new events arrived,
+            // If a debounced auto menu activation is due and no new events arrived,
             // open the menu now. New events take precedence: they'll either
             // reschedule (further edits) or implicitly cancel (other input)
             // when processed below.
-            let mut fired_pending_autocompletion = false;
+            let mut fired_pending_auto_menu = false;
             if events.is_empty() {
-                if let Some(deadline) = self.pending_autocompletion_at {
+                if let Some(deadline) = self.pending_auto_menu_at {
                     if Instant::now() >= deadline {
-                        self.pending_autocompletion_at = None;
-                        if let Some(menu_name) = self.autocompletion_action.clone() {
+                        self.pending_auto_menu_at = None;
+                        if let Some(menu_name) = self.auto_menu_action.clone() {
                             if self.active_menu().is_none() && !self.editor.is_empty() {
                                 if let Some(menu) = self
                                     .menus
@@ -986,7 +986,7 @@ impl Reedline {
                                     .find(|menu| menu.name() == &menu_name)
                                 {
                                     menu.menu_event(MenuEvent::Activate(false));
-                                    fired_pending_autocompletion = true;
+                                    fired_pending_auto_menu = true;
                                 }
                             }
                         }
@@ -1011,7 +1011,7 @@ impl Reedline {
                                 reedline_events
                                     .push(ReedlineEvent::Edit(std::mem::take(&mut edits)));
                             }
-                            // Push paste event as-is (will be handled without triggering autocompletion)
+                            // Push paste event as-is (will be handled without triggering the auto menu)
                             reedline_events.push(ReedlineEvent::Paste(paste_commands));
                         }
                         event => {
@@ -1035,7 +1035,7 @@ impl Reedline {
             }
 
             // Handle reedline events.
-            let mut need_repaint = fired_pending_autocompletion;
+            let mut need_repaint = fired_pending_auto_menu;
             for event in reedline_events {
                 match self.handle_event(prompt, event)? {
                     EventStatus::Exits(signal) => {
@@ -1371,9 +1371,9 @@ impl Reedline {
 
                         menu.menu_event(MenuEvent::Deactivate);
 
-                        // If buffer is unchanged and autocompletion is enabled,
+                        // If buffer is unchanged and the auto menu is enabled,
                         // fall through to execute the command instead of just accepting the completion
-                        if self.autocompletion_action.is_some()
+                        if self.auto_menu_action.is_some()
                             && buffer_before.trim() == buffer_after.trim()
                         {
                             break;
@@ -1493,7 +1493,7 @@ impl Reedline {
                     }
                 }
 
-                if let Some(menu_name) = self.autocompletion_action.clone() {
+                if let Some(menu_name) = self.auto_menu_action.clone() {
                     // Skip auto-opening when the batch is pure cursor movement
                     // (e.g. h/j/k/l in vim normal mode) — moving around should
                     // not pop the menu, only actual text edits should.
@@ -1501,7 +1501,7 @@ impl Reedline {
                         .iter()
                         .any(|c| c.edit_type() == EditType::EditText);
                     if edits_text && self.active_menu().is_none() && !self.editor.is_empty() {
-                        if self.autocompletion_delay.is_zero() {
+                        if self.auto_menu_delay.is_zero() {
                             if let Some(menu) =
                                 self.menus.iter_mut().find(|menu| menu.name() == &menu_name)
                             {
@@ -1510,20 +1510,20 @@ impl Reedline {
                         } else {
                             // Debounce: schedule activation; each new edit
                             // pushes the deadline back so the menu only opens
-                            // once typing pauses for `autocompletion_delay`.
-                            self.pending_autocompletion_at =
-                                Some(Instant::now() + self.autocompletion_delay);
+                            // once typing pauses for `auto_menu_delay`.
+                            self.pending_auto_menu_at =
+                                Some(Instant::now() + self.auto_menu_delay);
                         }
                     } else if self.editor.is_empty() {
                         // Buffer drained — drop any pending activation so the
                         // menu doesn't pop on an empty line.
-                        self.pending_autocompletion_at = None;
+                        self.pending_auto_menu_at = None;
                     }
                 }
                 Ok(EventStatus::Handled)
             }
             ReedlineEvent::Paste(commands) => {
-                // Run the paste commands like Edit, but do NOT trigger autocompletion
+                // Run the paste commands like Edit, but do NOT trigger the auto menu
                 self.run_edit_commands(&commands);
                 if let Some(menu) = self.menus.iter_mut().find(|men| men.is_active()) {
                     if self.editor.line_buffer().get_buffer().is_empty() {
@@ -1532,7 +1532,7 @@ impl Reedline {
                         menu.menu_event(MenuEvent::Edit(self.quick_completions));
                     }
                 }
-                // NOTE: Unlike Edit, we deliberately skip the autocompletion_action trigger
+                // NOTE: Unlike Edit, we deliberately skip the auto_menu_action trigger
                 // so that paste operations don't show the completion menu
                 Ok(EventStatus::Handled)
             }
