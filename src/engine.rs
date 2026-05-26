@@ -20,7 +20,7 @@ use {
         completion::{Completer, DefaultCompleter},
         core_editor::Editor,
         edit_mode::{EditMode, Emacs},
-        enums::{EventStatus, ReedlineEvent},
+        enums::{EditType, EventStatus, ReedlineEvent},
         highlighter::SimpleMatchHighlighter,
         hinter::Hinter,
         history::{
@@ -1430,7 +1430,13 @@ impl Reedline {
                 }
 
                 if let Some(menu_name) = self.autocompletion_action.clone() {
-                    if self.active_menu().is_none() && !self.editor.is_empty() {
+                    // Skip auto-opening when the batch is pure cursor movement
+                    // (e.g. h/j/k/l in vim normal mode) — moving around should
+                    // not pop the menu, only actual text edits should.
+                    let edits_text = commands
+                        .iter()
+                        .any(|c| c.edit_type() == EditType::EditText);
+                    if edits_text && self.active_menu().is_none() && !self.editor.is_empty() {
                         if let Some(menu) =
                             self.menus.iter_mut().find(|menu| menu.name() == &menu_name)
                         {
